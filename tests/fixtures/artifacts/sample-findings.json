@@ -1,0 +1,108 @@
+{
+  "schema_version": "1.0.0",
+  "scan_id": "fixture-scan",
+  "project_path": "/tmp/vuln-scout-fixtures",
+  "completed_at": "2026-03-24T00:00:00Z",
+  "source_tool": "multi",
+  "summary": {
+    "total_findings": 2,
+    "total_hotspots": 1,
+    "critical": 1,
+    "high": 1,
+    "medium": 0,
+    "low": 0,
+    "info": 0
+  },
+  "coverage": {
+    "files_scanned": 8,
+    "files_skipped": 0,
+    "lines_scanned": 140,
+    "ruleset": "fixtures"
+  },
+  "verification": {
+    "verified": 1,
+    "false_positive": 0,
+    "needs_review": 1,
+    "findings_skipped": 0,
+    "joern_available": true
+  },
+  "findings": [
+    {
+      "id": "VSCOUT-001",
+      "stable_key": "fixture:js-sqli",
+      "kind": "finding",
+      "severity": "critical",
+      "type": "sql-injection",
+      "title": "SQL injection in login handler",
+      "file": "tests/fixtures/code/js/vulnerable-sqli/app.ts",
+      "line": 6,
+      "rule_id": "semgrep.js.sqli",
+      "cwe": "CWE-89",
+      "verdict": "verified",
+      "confidence": "verified",
+      "source_tool": "semgrep",
+      "message": "User-controlled input is interpolated directly into an SQL query.",
+      "evidence": [
+        {
+          "type": "code",
+          "label": "tainted query",
+          "path": "tests/fixtures/code/js/vulnerable-sqli/app.ts",
+          "line": 6,
+          "excerpt": "const sql = `SELECT * FROM users WHERE email = '${email}'`;"
+        }
+      ],
+      "in_diff": true
+    },
+    {
+      "id": "VSCOUT-002",
+      "stable_key": "fixture:nextjs-hotspot",
+      "kind": "hotspot",
+      "severity": "high",
+      "type": "framework-redirect",
+      "title": "Next.js redirect audit pivot",
+      "file": "tests/fixtures/code/js/nextjs-redirect/app/actions.ts",
+      "line": 4,
+      "rule_id": "full-audit.nextjs.redirect",
+      "cwe": "CWE-918",
+      "verdict": "unverified",
+      "confidence": "medium",
+      "source_tool": "full-audit",
+      "message": "redirect() exists in a Server Action. Keep it as a hotspot until attacker control and fetch behavior are shown.",
+      "evidence": [
+        {
+          "type": "code",
+          "label": "server action redirect",
+          "path": "tests/fixtures/code/js/nextjs-redirect/app/actions.ts",
+          "line": 4,
+          "excerpt": "redirect(target);"
+        }
+      ],
+      "in_diff": true
+    },
+    {
+      "id": "VSCOUT-003",
+      "stable_key": "fixture:go-ssrf",
+      "kind": "finding",
+      "severity": "high",
+      "type": "ssrf",
+      "title": "Go HTTP client fetches user-controlled URL",
+      "file": "tests/fixtures/code/go/vulnerable-ssrf/main.go",
+      "line": 19,
+      "rule_id": "joern.go.ssrf",
+      "cwe": "CWE-918",
+      "verdict": "needs_review",
+      "confidence": "high",
+      "source_tool": "joern",
+      "message": "User-controlled target reaches http.Get without host allowlisting.",
+      "evidence": [
+        {
+          "type": "code",
+          "label": "unsafe fetch",
+          "path": "tests/fixtures/code/go/vulnerable-ssrf/main.go",
+          "line": 19,
+          "excerpt": "resp, err := http.Get(target)"
+        }
+      ]
+    }
+  ]
+}

@@ -14,7 +14,7 @@ One command. Full audit. Any codebase.
 
 ---
 
-VulnScout is a Claude Code plugin that turns Claude into an autonomous security researcher. It brings battle-tested pentesting methodology (HTB Academy, OffSec AWAE/OSWE) into your terminal -- with STRIDE threat modeling, OWASP 2025 coverage, and support for 9 languages including Solidity smart contracts.
+VulnScout is a Claude Code plugin that turns Claude into an autonomous security reviewer. It brings battle-tested pentesting methodology (HTB Academy, OffSec AWAE/OSWE) into your terminal with STRIDE threat modeling, evidence-first findings, and support for 9 languages including Solidity smart contracts.
 
 ## Why VulnScout?
 
@@ -29,11 +29,12 @@ Traditional SAST tools find patterns. VulnScout **understands your application**
 ## Quick Start
 
 ```bash
-# Add the plugin to your project
-claude mcp add --plugin /path/to/vuln-scout/whitebox-pentest
-
-# Or symlink into your project's plugin directory
+# Option 1: Symlink into your project's plugin directory
+mkdir -p .claude/plugins
 ln -s /path/to/vuln-scout/whitebox-pentest .claude/plugins/whitebox-pentest
+
+# Option 2: Copy into your project
+cp -r /path/to/vuln-scout/whitebox-pentest .claude/plugins/whitebox-pentest
 
 # Run a full audit
 /whitebox-pentest:full-audit .
@@ -52,11 +53,11 @@ ln -s /path/to/vuln-scout/whitebox-pentest .claude/plugins/whitebox-pentest
 | `/whitebox-pentest:threats` | STRIDE threat modeling with data flow diagrams |
 | `/whitebox-pentest:sinks` | Find dangerous functions across 9 languages |
 | `/whitebox-pentest:trace` | Follow data from source to sink |
-| `/whitebox-pentest:scan` | Run Semgrep, CodeQL, or Joern |
+| `/whitebox-pentest:scan` | Run Semgrep, CodeQL, and Joern branches into a shared findings artifact |
 | `/whitebox-pentest:scope` | Handle large codebases with smart compression |
 | `/whitebox-pentest:propagate` | Found one bug? Find every instance of the pattern |
 | `/whitebox-pentest:verify` | CPG-based false positive elimination |
-| `/whitebox-pentest:report` | Generate findings report with remediation |
+| `/whitebox-pentest:report` | Render Markdown, JSON, or SARIF from the shared findings artifact |
 
 ### 7 Autonomous Agents
 
@@ -68,7 +69,7 @@ Agents run independently and return detailed analysis:
 - **local-tester** -- Dynamic testing guidance
 - **poc-developer** -- Proof of concept development
 - **patch-advisor** -- Specific remediation with code patches
-- **false-positive-verifier** -- Chain-of-thought verification
+- **false-positive-verifier** -- Evidence-based verification
 
 ### 22 Auto-Activated Skills
 
@@ -76,7 +77,7 @@ Skills activate automatically when relevant -- no configuration needed:
 
 **Core Analysis**: dangerous-functions, vuln-patterns, data-flow-tracing, cpg-analysis, exploit-techniques
 
-**OWASP 2025 Coverage**: security-misconfiguration, cryptographic-failures, logging-failures, exception-handling, sensitive-data-leakage, business-logic
+**OWASP Mapping**: security-misconfiguration, cryptographic-failures, logging-failures, exception-handling, sensitive-data-leakage, business-logic
 
 **Advanced**: threat-modeling, vulnerability-chains, cross-component, cache-poisoning, postmessage-xss, sandbox-escapes, framework-patterns, nextjs-react
 
@@ -96,24 +97,41 @@ Skills activate automatically when relevant -- no configuration needed:
 | Ruby | 85-90% fewer tokens | Semgrep |
 | Solidity | 70-80% fewer tokens | Semgrep, Slither |
 
-## OWASP Top 10 Coverage
+## OWASP Top 10 Mapping
 
-Based on the [OWASP Top 10 (2021)](https://owasp.org/Top10/) with forward-looking alignment to draft 2025 categories:
+VulnScout reports against the official OWASP Top 10 naming, while the legacy `owasp-2025` skill directory is retained for compatibility with existing skill references.
 
-| # | Category | Status |
-|---|----------|--------|
-| A01 | Broken Access Control | Covered |
-| A02 | Cryptographic Failures | Covered |
-| A03 | Injection | Covered |
-| A04 | Insecure Design | Covered |
-| A05 | Security Misconfiguration | Covered |
-| A06 | Vulnerable Components | Out of scope |
-| A07 | Auth & Identity Failures | Covered |
-| A08 | Data Integrity Failures | Covered |
-| A09 | Logging & Monitoring Failures | Covered |
-| A10 | SSRF | Covered |
+| # | OWASP Top 10 | Coverage | Primary Skills |
+|---|---------------|----------|----------------|
+| A01 | Broken Access Control | Covered | `business-logic` |
+| A02 | Cryptographic Failures | Covered | `cryptographic-failures` |
+| A03 | Injection | Covered | `vuln-patterns`, `dangerous-functions` |
+| A04 | Insecure Design | Covered | `business-logic`, `threat-modeling` |
+| A05 | Security Misconfiguration | Covered | `security-misconfiguration` |
+| A06 | Vulnerable and Outdated Components | Out of scope | -- |
+| A07 | Identification and Authentication Failures | Covered | `vuln-patterns` |
+| A08 | Software and Data Integrity Failures | Covered | `vuln-patterns` |
+| A09 | Security Logging and Monitoring Failures | Covered | `logging-failures`, `sensitive-data-leakage` |
+| A10 | Server-Side Request Forgery | Covered | `vuln-patterns`, `framework-patterns`, `vulnerability-chains` |
 
-**9/10 categories covered.** A06 (Vulnerable Components) excluded by design -- VulnScout focuses on your code, not your dependencies.
+**9/10 categories covered.** A06 is intentionally out of scope because VulnScout focuses on source review and exploitability inside your codebase, not dependency inventory.
+
+## Findings Artifact and CI Workflow
+
+`/scan`, `/verify`, and `/full-audit` now share one contract: `.claude/findings.json`.
+
+- `schema_version` identifies the artifact version.
+- `kind` separates reportable `finding` entries from audit `hotspot` pivots.
+- `stable_key` gives each entry a suppression-safe identifier.
+- `source_tool` and `evidence` are required on every entry.
+- Severity summaries count only unsuppressed entries where `kind == "finding"`.
+
+CI-focused flags are available across the workflow:
+
+- `--since-commit <sha>` scopes analysis to recent code changes.
+- `--suppressions <path>` applies stable-key suppressions from `.vuln-scout-ignore`.
+- `--fail-on <severity>` returns exit code `2` when blocking findings remain.
+- `--format sarif|json|md` emits machine-readable or human-readable output.
 
 ## How It Works
 
@@ -193,6 +211,37 @@ The plugin supports two complementary approaches:
 2. **Understanding-First** -- Map the application, then hunt with context
 
 Both work together. Understanding reveals business logic bugs that sink scanning misses.
+
+## Diff-Aware Scanning
+
+Scope audits to recent changes or PR diffs for fast CI feedback:
+
+```bash
+# Scan only files changed since a known base
+/whitebox-pentest:full-audit . --since-commit origin/main
+
+# Prioritize modules with recent changes
+/whitebox-pentest:full-audit . --recent 7
+
+# Headless PR gate: diff scan, JSON output, no prompts
+/whitebox-pentest:full-audit . --since-commit origin/main --quick --json --no-interactive
+
+# Incremental Semgrep scan of changed files
+/whitebox-pentest:scan . --since-commit origin/main --format sarif --fail-on high
+```
+
+`--diff-base` remains as a backward-compatible alias for older automation.
+
+## Dynamic Verification
+
+Optionally execute generated PoC scripts to confirm exploitability:
+
+```bash
+# Audit with dynamic PoC verification (requires explicit approval per PoC)
+/whitebox-pentest:full-audit . --verify-dynamic
+```
+
+Safety-first: PoCs run in `--dry-run` mode by default, require user confirmation, have a 30s timeout, and must include cleanup functions.
 
 ## Project Structure
 

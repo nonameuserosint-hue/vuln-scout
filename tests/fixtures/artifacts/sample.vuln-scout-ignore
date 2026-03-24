@@ -1,0 +1,2 @@
+# Example suppression file used by automated tests
+fixture:go-ssrf false positive in fixture
