@@ -29,3 +29,7 @@ workspace/
 joern-workspace/
 .joern/
 
+# Python bytecode
+__pycache__/
+*.pyc
+
