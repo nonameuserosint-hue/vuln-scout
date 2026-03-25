@@ -16,12 +16,17 @@ One command. Full audit. Any codebase.
 
 VulnScout is a Claude Code plugin that turns Claude into an autonomous security reviewer. It brings battle-tested pentesting methodology (HTB Academy, OffSec AWAE/OSWE) into your terminal with STRIDE threat modeling, evidence-first findings, and support for 9 languages including Solidity smart contracts.
 
+**Tested end-to-end on OWASP Juice Shop v17.1.1** -- 62 findings across SQL injection, XSS, path traversal, SSTI, SSRF, hardcoded secrets, and more.
+
 ## Why VulnScout?
 
 Traditional SAST tools find patterns. VulnScout **understands your application**.
 
+- **Automated scan pipeline** -- Semgrep + Joern CPG + secret scanning in one command, with SARIF and Markdown output
 - **Threat models first, then hunts** -- STRIDE analysis identifies what matters before scanning
 - **Traces data flow, not just patterns** -- follows user input from source to sink across files and services
+- **15 CPG verification scripts** -- proves exploitability through Code Property Graph analysis, not just pattern matching
+- **CVSS 3.1 auto-scoring** -- every finding gets a CVSS vector and numeric score
 - **Handles massive codebases** -- language-aware compression (Go: 97% reduction, Python: 90%) lets it audit million-token monorepos
 - **Chains vulnerabilities** -- finds SSRF-to-SSTI-to-RCE attack chains that single-pattern scanners miss
 - **Polyglot-native** -- audits Go + Python + TypeScript microservices as one interconnected system
@@ -43,6 +48,26 @@ cp -r /path/to/vuln-scout/whitebox-pentest .claude/plugins/whitebox-pentest
 /whitebox-pentest:threats
 ```
 
+> **Note**: `.claude/plugins/` is relative to your project root. Claude Code automatically discovers plugins in this directory.
+
+## Standalone Scan Pipeline
+
+VulnScout includes Python scripts that run independently of Claude Code:
+
+```bash
+# Scan with Semgrep + secret scanning
+python3 scripts/scan_orchestrator.py /path/to/code --tools semgrep --secrets --format sarif
+
+# Create a Joern CPG (cached by content hash)
+python3 scripts/create_cpg.py /path/to/code
+
+# Batch-verify findings with Joern CPG analysis
+python3 scripts/batch_verify.py --findings .claude/findings.json --cpg .joern/*.cpg
+
+# CI gate: fail on high-severity findings
+python3 scripts/scan_orchestrator.py . --tools semgrep --fail-on high --format sarif --output findings.sarif
+```
+
 ## What You Get
 
 ### 9 Commands
@@ -53,7 +78,7 @@ cp -r /path/to/vuln-scout/whitebox-pentest .claude/plugins/whitebox-pentest
 | `/whitebox-pentest:threats` | STRIDE threat modeling with data flow diagrams |
 | `/whitebox-pentest:sinks` | Find dangerous functions across 9 languages |
 | `/whitebox-pentest:trace` | Follow data from source to sink |
-| `/whitebox-pentest:scan` | Run Semgrep, CodeQL, and Joern branches into a shared findings artifact |
+| `/whitebox-pentest:scan` | Run Semgrep, CodeQL, and Joern into a shared findings artifact |
 | `/whitebox-pentest:scope` | Handle large codebases with smart compression |
 | `/whitebox-pentest:propagate` | Found one bug? Find every instance of the pattern |
 | `/whitebox-pentest:verify` | CPG-based false positive elimination |
@@ -64,12 +89,34 @@ cp -r /path/to/vuln-scout/whitebox-pentest .claude/plugins/whitebox-pentest
 Agents run independently and return detailed analysis:
 
 - **app-mapper** -- Maps architecture and trust boundaries
-- **threat-modeler** -- STRIDE analysis and data flow diagrams
+- **threat-modeler** -- STRIDE analysis and data flow diagrams (consumes app-mapper output)
 - **code-reviewer** -- Proactive vulnerability identification
-- **local-tester** -- Dynamic testing guidance
+- **local-tester** -- Dynamic testing guidance (hands off to poc-developer)
 - **poc-developer** -- Proof of concept development
 - **patch-advisor** -- Specific remediation with code patches
-- **false-positive-verifier** -- Evidence-based verification
+- **false-positive-verifier** -- Evidence-based verification with NEEDS_REVIEW resolution path
+
+### 15 Joern CPG Verification Scripts
+
+Each script proves or disproves a vulnerability through Code Property Graph data flow analysis:
+
+| Script | What it verifies |
+|--------|-----------------|
+| verify-sqli | SQL injection (parameterization, binding APIs) |
+| verify-cmdi | Command injection (shell vs array execution) |
+| verify-xss | Cross-site scripting (encoding, Content-Type) |
+| verify-path | Path traversal (strong vs weak normalization) |
+| verify-ssrf | Server-side request forgery (URL validation, allowlists) |
+| verify-xxe | XML external entity injection (entity disabling) |
+| verify-ssti | Server-side template injection (filesystem vs user templates) |
+| verify-deser | Unsafe deserialization (SafeLoader, ObjectInputFilter) |
+| verify-ldap | LDAP injection (filter escaping) |
+| verify-randomness | Insecure randomness (crypto alternatives) |
+| verify-reentrancy | Solidity reentrancy (CEI pattern) |
+| verify-overflow | Solidity integer overflow (SafeMath, Solidity >=0.8) |
+| verify-access-control | Solidity missing access control (onlyOwner, tx.origin) |
+| verify-delegatecall | Solidity delegatecall risks (proxy patterns, EIP-1967) |
+| verify-generic | Fallback for types without a dedicated script |
 
 ### 27 Auto-Activated Skills
 
@@ -83,57 +130,69 @@ Skills activate automatically when relevant -- no configuration needed:
 
 **Infrastructure**: workspace-discovery, mixed-language-monorepos, owasp-2025, secret-scanning
 
-**New Coverage**: ai-ml-attacks, owasp-api-top10, cloud-native, compliance-mapping
+**Extended Coverage**: ai-ml-attacks, owasp-api-top10, cloud-native, compliance-mapping
+
+### Framework Security Patterns
+
+Dedicated detection patterns for:
+- **Django** -- ORM bypass, template injection, CSRF exemptions, settings exposure
+- **Rails** -- Mass assignment, SQL interpolation, ERB injection, Marshal.load
+- **Spring Security** -- SpEL injection, CORS/CSRF misconfiguration, actuator exposure
+- **GraphQL** -- Introspection, depth/complexity limits, batching, nested auth bypass
+- **Next.js/React** -- Server Actions SSRF, middleware bypass, Server Component data exposure
+- **Flask/Twig/Blade** -- SSTI, filter callbacks, sandbox escapes
 
 ## Supported Languages
 
-| Language | Token Reduction | Static Analysis |
-|----------|----------------|-----------------|
-| Go | 95-97% fewer tokens | Semgrep, Joern |
-| TypeScript/JS | ~80% fewer tokens | Semgrep, CodeQL |
-| Python | 85-90% fewer tokens | Semgrep, Joern |
-| Java | 80-85% fewer tokens | Semgrep, CodeQL |
-| Rust | 85-90% fewer tokens | Semgrep |
-| PHP | 80-85% fewer tokens | Semgrep |
-| C#/.NET | 80-85% fewer tokens | Semgrep, CodeQL |
-| Ruby | 85-90% fewer tokens | Semgrep |
-| Solidity | 70-80% fewer tokens | Semgrep, Slither |
+| Language | Token Reduction | Static Analysis | CPG Verification |
+|----------|----------------|-----------------|------------------|
+| Go | 95-97% fewer tokens | Semgrep, Joern | Yes |
+| TypeScript/JS | ~80% fewer tokens | Semgrep, CodeQL | Yes |
+| Python | 85-90% fewer tokens | Semgrep, Joern | Yes |
+| Java | 80-85% fewer tokens | Semgrep, CodeQL | Yes |
+| PHP | 80-85% fewer tokens | Semgrep | Yes |
+| Ruby | 85-90% fewer tokens | Semgrep | Yes |
+| Rust | 85-90% fewer tokens | Semgrep | -- |
+| C#/.NET | 80-85% fewer tokens | Semgrep, CodeQL | -- |
+| Solidity | 70-80% fewer tokens | Semgrep, Slither | Yes (4 scripts) |
 
 ## OWASP Top 10 Mapping
 
-VulnScout reports against the official OWASP Top 10 naming, while the legacy `owasp-2025` skill directory is retained for compatibility with existing skill references.
-
 | # | OWASP Top 10 | Coverage | Primary Skills |
 |---|---------------|----------|----------------|
-| A01 | Broken Access Control | Covered | `business-logic` |
+| A01 | Broken Access Control | Covered | `business-logic`, `owasp-api-top10` |
 | A02 | Cryptographic Failures | Covered | `cryptographic-failures` |
 | A03 | Injection | Covered | `vuln-patterns`, `dangerous-functions` |
 | A04 | Insecure Design | Covered | `business-logic`, `threat-modeling` |
-| A05 | Security Misconfiguration | Covered | `security-misconfiguration` |
+| A05 | Security Misconfiguration | Covered | `security-misconfiguration`, `cloud-native` |
 | A06 | Vulnerable and Outdated Components | Out of scope | -- |
 | A07 | Identification and Authentication Failures | Covered | `vuln-patterns` |
-| A08 | Software and Data Integrity Failures | Covered | `vuln-patterns` |
+| A08 | Software and Data Integrity Failures | Covered | `vuln-patterns`, `ai-ml-attacks` |
 | A09 | Security Logging and Monitoring Failures | Covered | `logging-failures`, `sensitive-data-leakage` |
-| A10 | Server-Side Request Forgery | Covered | `vuln-patterns`, `framework-patterns`, `vulnerability-chains` |
+| A10 | Server-Side Request Forgery | Covered | `vuln-patterns`, `framework-patterns`, `cloud-native` |
 
-**9/10 categories covered.** A06 is intentionally out of scope because VulnScout focuses on source review and exploitability inside your codebase, not dependency inventory.
+**9/10 categories covered.** A06 is intentionally out of scope -- VulnScout focuses on source review and exploitability, not dependency inventory.
 
 ## Findings Artifact and CI Workflow
 
-`/scan`, `/verify`, and `/full-audit` now share one contract: `.claude/findings.json`.
+`/scan`, `/verify`, and `/full-audit` share one contract: `.claude/findings.json`.
 
 - `schema_version` identifies the artifact version.
 - `kind` separates reportable `finding` entries from audit `hotspot` pivots.
 - `stable_key` gives each entry a suppression-safe identifier.
 - `source_tool` and `evidence` are required on every entry.
+- `cvss_vector` and `cvss_score` provide CVSS 3.1 scoring.
 - Severity summaries count only unsuppressed entries where `kind == "finding"`.
 
-CI-focused flags are available across the workflow:
+CI-focused flags:
 
-- `--since-commit <sha>` scopes analysis to recent code changes.
-- `--suppressions <path>` applies stable-key suppressions from `.vuln-scout-ignore`.
-- `--fail-on <severity>` returns exit code `2` when blocking findings remain.
-- `--format sarif|json|md` emits machine-readable or human-readable output.
+```bash
+--since-commit <sha>     # Scope to recent changes
+--suppressions <path>    # Apply .vuln-scout-ignore suppressions
+--fail-on <severity>     # Exit code 2 when blocking findings remain
+--format sarif|json|md   # Machine-readable or human-readable output
+--secrets                # Enable gitleaks/trufflehog secret scanning
+```
 
 ## How It Works
 
@@ -141,12 +200,13 @@ CI-focused flags are available across the workflow:
 /full-audit automatically:
 
 1. Measures codebase    -->  Too big? Compresses with language-aware strategy
-2. Detects frameworks   -->  Next.js, Flask, Spring, Rails, Solidity...
+2. Detects frameworks   -->  Next.js, Flask, Spring, Rails, Django, Solidity...
 3. Threat models        -->  STRIDE analysis, DFDs, trust boundaries
 4. Ranks modules        -->  Auth first, then APIs, then everything else
-5. Deep-dive audits     -->  Sinks, data flow tracing, pattern matching
-6. Chains findings      -->  Connects SSRF + SSTI + RCE across services
-7. Reports              -->  Markdown + JSON with remediation
+5. Scans (Semgrep)      -->  Pattern matching + taint analysis
+6. Verifies (Joern)     -->  CPG data flow proof per finding
+7. Chains findings      -->  Connects SSRF + SSTI + RCE across services
+8. Reports              -->  Markdown, JSON, or SARIF with CVSS scores
 ```
 
 ### Polyglot Monorepos
@@ -171,15 +231,18 @@ Cross-Service Findings:
 
 ## Vulnerability Coverage
 
-- **Injection**: SQL, Command, LDAP, Template (SSTI)
+- **Injection**: SQL, Command, LDAP, Template (SSTI), XXE
 - **Authentication**: Bypass, Session attacks, JWT flaws
-- **Access Control**: IDOR, Privilege escalation
+- **Access Control**: IDOR, Privilege escalation, BOLA (API)
 - **Business Logic**: Workflow bypass, state manipulation, trust boundary violations
-- **Cryptography**: Weak algorithms, hardcoded secrets
-- **Deserialization**: Java, PHP, Python, .NET gadgets
+- **Cryptography**: Weak algorithms, hardcoded secrets, insecure randomness
+- **Deserialization**: Java, PHP, Python, .NET, ML pipeline (joblib/torch.load)
+- **API Security**: GraphQL depth attacks, mass assignment, gRPC reflection
+- **Cloud Native**: IMDS endpoints, S3 misconfiguration, K8s RBAC, serverless env leakage
 - **Race Conditions**: TOCTOU, double-spend attacks
-- **Data Leakage**: Credentials in logs, error exposure
-- **Smart Contracts**: Reentrancy, flash loans, oracle manipulation, access control
+- **Data Leakage**: Credentials in logs, error exposure, secret scanning (git history)
+- **Smart Contracts**: Reentrancy, integer overflow, access control, delegatecall, flash loans
+- **Compliance**: PCI-DSS, HIPAA, SOC 2, NIST CSF mapping
 
 ## Prerequisites
 
@@ -190,13 +253,19 @@ npm install -g repomix    # Codebase compression for large repos
 
 **Recommended (enhances scanning):**
 ```bash
-pip install semgrep                                         # Pattern matching
-curl -L "https://github.com/joernio/joern/releases/latest/download/joern-install.sh" | bash  # CPG analysis
+pip install semgrep       # Pattern matching + taint analysis
 ```
 
-**For Solidity:**
+**Optional (deepens analysis):**
 ```bash
-pip install slither-analyzer  # Smart contract analysis
+# Joern CPG analysis (data flow verification)
+curl -L "https://github.com/joernio/joern/releases/latest/download/joern-install.sh" | bash
+
+# Secret scanning (git history)
+brew install gitleaks     # or: pip install trufflehog
+
+# Solidity analysis
+pip install slither-analyzer
 ```
 
 ## Methodology
@@ -254,7 +323,17 @@ whitebox-pentest/
   commands/                     # 9 slash commands
   hooks/                        # 4 background automation hooks
   skills/                       # 27 auto-activated knowledge modules
-  scripts/                      # Helper scripts (Joern queries, etc.)
+  scripts/
+    scan_orchestrator.py        # Main scan pipeline
+    run_semgrep.py              # Semgrep wrapper + normalizer
+    run_secrets.py              # Secret scanner (gitleaks/trufflehog)
+    create_cpg.py               # Joern CPG creation + caching
+    batch_verify.py             # Batch CPG verification
+    bundle_joern.py             # Script bundler for Joern compatibility
+    markdown_report.py          # Report generator
+    artifact_utils.py           # Findings schema, SARIF, CVSS, dedup
+    tool_runners/               # Modular tool runner package
+    joern/                      # 15 CPG verification scripts
 ```
 
 ## License
