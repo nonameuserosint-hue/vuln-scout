@@ -45,6 +45,9 @@ business_context = load_module("business_context_extractor", SCRIPTS_DIR / "busi
 feedback_collector = load_module("feedback_collector", SCRIPTS_DIR / "feedback_collector.py")
 cache_manager = load_module("cache_manager", SCRIPTS_DIR / "cache_manager.py")
 service_graph = load_module("service_graph", SCRIPTS_DIR / "service_graph.py")
+api_spec_parser = load_module("api_spec_parser", SCRIPTS_DIR / "api_spec_parser.py")
+pipeline_engine = load_module("pipeline_engine", SCRIPTS_DIR / "pipeline_engine.py")
+claude_analyzer = load_module("claude_analyzer", SCRIPTS_DIR / "tool_runners" / "claude_analyzer.py")
 
 
 # ---------------------------------------------------------------------------
@@ -556,3 +559,200 @@ class ServiceGraphTests(unittest.TestCase):
         d = graph.to_dict()
         self.assertEqual(len(d["services"]), 1)
         self.assertEqual(d["services"][0]["name"], "api")
+
+
+# ===================================================================
+# API Spec Parser
+# ===================================================================
+
+class ApiSpecParserTests(unittest.TestCase):
+    def test_discover_specs_empty_dir(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            specs = api_spec_parser.discover_specs(tmpdir)
+            self.assertEqual(len(specs), 0)
+
+    def test_discover_openapi_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            spec_file = Path(tmpdir) / "openapi.json"
+            spec_file.write_text('{"openapi": "3.0.0", "paths": {}}')
+            specs = api_spec_parser.discover_specs(tmpdir)
+            self.assertEqual(len(specs), 1)
+            self.assertEqual(specs[0]["type"], "openapi")
+
+    def test_parse_openapi_endpoints(self):
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test API"},
+            "security": [{"bearerAuth": []}],
+            "paths": {
+                "/users": {
+                    "get": {"responses": {"200": {}}},
+                    "post": {"security": [], "responses": {"201": {}}},
+                },
+                "/public": {
+                    "get": {"security": [{}], "responses": {"200": {}}},
+                },
+            },
+        }
+        with tempfile.NamedTemporaryFile(suffix=".json", mode="w", delete=False) as f:
+            json.dump(spec, f)
+            f.flush()
+            parsed = api_spec_parser.parse_openapi(f.name)
+        self.assertIsNotNone(parsed)
+        self.assertEqual(len(parsed["endpoints"]), 3)
+        # GET /users inherits global security
+        users_get = next(e for e in parsed["endpoints"] if e["path"] == "/users" and e["method"] == "GET")
+        self.assertTrue(users_get["has_auth"])
+        # POST /users has empty security = no auth
+        users_post = next(e for e in parsed["endpoints"] if e["path"] == "/users" and e["method"] == "POST")
+        self.assertFalse(users_post["has_auth"])
+
+    def test_check_missing_auth(self):
+        spec = {"endpoints": [
+            {"method": "POST", "path": "/admin", "has_auth": False, "parameters": [], "responses": []},
+            {"method": "GET", "path": "/public", "has_auth": False, "parameters": [], "responses": []},
+        ]}
+        findings = api_spec_parser.check_missing_auth(spec)
+        # POST without auth should be flagged, GET without auth should not
+        self.assertEqual(len(findings), 1)
+        self.assertIn("POST /admin", findings[0]["title"])
+
+    def test_check_pii_in_params(self):
+        spec = {"endpoints": [
+            {"method": "GET", "path": "/search", "has_auth": True,
+             "parameters": [{"name": "email", "in": "query", "required": True}],
+             "responses": []},
+        ]}
+        findings = api_spec_parser.check_pii_in_params(spec)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["type"], "pii-in-query-param")
+
+    def test_check_rate_limiting(self):
+        spec = {"endpoints": [
+            {"method": "POST", "path": "/transfer", "has_auth": True,
+             "parameters": [], "responses": ["200"]},  # No 429
+        ]}
+        findings = api_spec_parser.check_rate_limiting(spec)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["type"], "missing-rate-limit")
+
+    def test_cross_reference_shadow_api(self):
+        spec_eps = [{"method": "GET", "path": "/users"}]
+        code_eps = [
+            {"method": "GET", "path": "/users"},
+            {"method": "POST", "path": "/admin/reset"},
+        ]
+        findings = api_spec_parser.cross_reference_endpoints(spec_eps, code_eps)
+        self.assertEqual(len(findings), 1)
+        self.assertIn("Undocumented", findings[0]["title"])
+
+    def test_run_no_specs(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            findings = api_spec_parser.run(tmpdir)
+            self.assertEqual(len(findings), 0)
+
+
+# ===================================================================
+# Pipeline Engine
+# ===================================================================
+
+class PipelineEngineTests(unittest.TestCase):
+    def test_run_pipeline_success(self):
+        def mock_tool(target=".", **kwargs):
+            return [_make_finding()]
+
+        tasks = [("mock-tool", mock_tool, {"target": "."})]
+        result = pipeline_engine.run_pipeline(tasks, verbose=False)
+        self.assertEqual(len(result.findings), 1)
+        self.assertIn("mock-tool", result.tools_succeeded)
+        self.assertEqual(len(result.tools_failed), 0)
+        self.assertGreater(result.duration_seconds, 0)
+
+    def test_run_pipeline_tool_failure(self):
+        def failing_tool(target=".", **kwargs):
+            raise RuntimeError("tool crashed")
+
+        tasks = [("bad-tool", failing_tool, {"target": "."})]
+        result = pipeline_engine.run_pipeline(tasks, verbose=False)
+        self.assertEqual(len(result.findings), 0)
+        self.assertIn("bad-tool", result.tools_failed)
+
+    def test_run_pipeline_mixed_success_failure(self):
+        def good_tool(target=".", **kwargs):
+            return [_make_finding()]
+
+        def bad_tool(target=".", **kwargs):
+            raise RuntimeError("crash")
+
+        tasks = [
+            ("good", good_tool, {"target": "."}),
+            ("bad", bad_tool, {"target": "."}),
+        ]
+        result = pipeline_engine.run_pipeline(tasks, verbose=False)
+        self.assertEqual(len(result.findings), 1)
+        self.assertIn("good", result.tools_succeeded)
+        self.assertIn("bad", result.tools_failed)
+
+    def test_streaming_jsonl(self):
+        def mock_tool(target=".", **kwargs):
+            return [_make_finding(), _make_finding(id="V2")]
+
+        with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as f:
+            jsonl_path = Path(f.name)
+        tasks = [("mock", mock_tool, {"target": "."})]
+        pipeline_engine.run_pipeline(tasks, jsonl_path=jsonl_path, verbose=False)
+        lines = jsonl_path.read_text().strip().splitlines()
+        self.assertEqual(len(lines), 2)
+        # Each line should be valid JSON
+        for line in lines:
+            parsed = json.loads(line)
+            self.assertIn("type", parsed)
+
+
+# ===================================================================
+# Claude Analyzer (unit tests -- doesn't call Claude)
+# ===================================================================
+
+class ClaudeAnalyzerTests(unittest.TestCase):
+    def test_should_analyze_unverified(self):
+        self.assertTrue(claude_analyzer.should_analyze(
+            {"verdict": "unverified", "kind": "finding"}))
+
+    def test_should_not_analyze_verified(self):
+        self.assertFalse(claude_analyzer.should_analyze(
+            {"verdict": "verified", "kind": "finding"}))
+
+    def test_build_prompt_contains_type(self):
+        finding = _make_finding()
+        prompt = claude_analyzer.build_analysis_prompt(finding, "some code context")
+        self.assertIn("sql-injection", prompt.lower())
+        self.assertIn("api.py", prompt)
+
+    def test_parse_valid_response(self):
+        response = '```json\n{"verdict": "verified", "confidence": "high", "reasoning": "test"}\n```'
+        result = claude_analyzer.parse_analysis_response(response)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["verdict"], "verified")
+
+    def test_parse_invalid_response(self):
+        result = claude_analyzer.parse_analysis_response("not json at all")
+        self.assertIsNone(result)
+
+    def test_apply_analysis_updates_finding(self):
+        finding = _make_finding(evidence=[])
+        analysis = {"verdict": "verified", "confidence": "high", "reasoning": "test reason"}
+        claude_analyzer.apply_analysis(finding, analysis)
+        self.assertEqual(finding["verdict"], "verified")
+        self.assertEqual(finding["confidence"], "high")
+        self.assertIn("claude_analysis", finding)
+        self.assertEqual(len(finding["evidence"]), 1)
+
+    def test_select_prioritizes_critical(self):
+        findings = [
+            _make_finding(id="1", verdict="unverified", severity="low", kind="finding"),
+            _make_finding(id="2", verdict="unverified", severity="critical", kind="finding"),
+            _make_finding(id="3", verdict="verified", severity="critical", kind="finding"),
+        ]
+        selected = claude_analyzer.select_findings_for_analysis(findings)
+        self.assertEqual(len(selected), 2)  # #3 excluded (verified)
+        self.assertEqual(selected[0]["id"], "2")  # Critical first
