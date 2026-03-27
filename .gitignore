@@ -33,3 +33,10 @@ joern-workspace/
 __pycache__/
 *.pyc
 
+# VulnScout scan artifacts
+.vuln-scout-cache/
+.codeql/
+*.jsonl
+
+# Node modules
+node_modules/
