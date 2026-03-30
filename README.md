@@ -64,13 +64,16 @@ python3 scripts/create_cpg.py /path/to/code
 # Batch-verify findings with Joern CPG analysis
 python3 scripts/batch_verify.py --findings .claude/findings.json --cpg .joern/*.cpg
 
+# Render HTML or Markdown from an existing findings artifact
+python3 scripts/report.py .claude/findings.json --format html --output security-report.html
+
 # CI gate: fail on high-severity findings
 python3 scripts/scan_orchestrator.py . --tools semgrep --fail-on high --format sarif --output findings.sarif
 ```
 
 ## What You Get
 
-### 9 Commands
+### 13 Commands
 
 | Command | What it does |
 |---------|-------------|
@@ -82,9 +85,13 @@ python3 scripts/scan_orchestrator.py . --tools semgrep --fail-on high --format s
 | `/whitebox-pentest:scope` | Handle large codebases with smart compression |
 | `/whitebox-pentest:propagate` | Found one bug? Find every instance of the pattern |
 | `/whitebox-pentest:verify` | CPG-based false positive elimination |
-| `/whitebox-pentest:report` | Render Markdown, JSON, or SARIF from the shared findings artifact |
+| `/whitebox-pentest:report` | Render Markdown, JSON, SARIF, or HTML from the shared findings artifact |
+| `/whitebox-pentest:diff` | Compare security posture between git refs and highlight regressions |
+| `/whitebox-pentest:auto-fix` | Auto-remediate verified findings with generated patches |
+| `/whitebox-pentest:create-rule` | Generate a custom Semgrep rule from a confirmed vulnerability pattern |
+| `/whitebox-pentest:mutate` | Mutation-test security controls to find detection gaps |
 
-### 7 Autonomous Agents
+### 8 Autonomous Agents
 
 Agents run independently and return detailed analysis:
 
@@ -95,6 +102,7 @@ Agents run independently and return detailed analysis:
 - **poc-developer** -- Proof of concept development
 - **patch-advisor** -- Specific remediation with code patches
 - **false-positive-verifier** -- Evidence-based verification with NEEDS_REVIEW resolution path
+- **attack-researcher** -- Autonomous attack vector exploration beyond pattern matching
 
 ### 15 Joern CPG Verification Scripts
 
