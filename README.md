@@ -33,6 +33,8 @@ Traditional SAST tools find patterns. VulnScout **understands your application**
 
 ## Quick Start
 
+### As a Claude Code plugin
+
 ```bash
 # Option 1: Symlink into your project's plugin directory
 mkdir -p .claude/plugins
@@ -49,6 +51,26 @@ cp -r /path/to/vuln-scout/whitebox-pentest .claude/plugins/whitebox-pentest
 ```
 
 > **Note**: `.claude/plugins/` is relative to your project root. Claude Code automatically discovers plugins in this directory.
+
+### As a Kuzushi task
+
+VulnScout is available as a native task in [Kuzushi](https://github.com/allsmog/Kuzushi), the AI security scanner. When installed as a dependency, Kuzushi loads the vuln-scout plugin into its task DAG alongside Semgrep, CodeQL, and 15+ other detection tasks.
+
+```bash
+# Run vuln-scout as part of a Kuzushi scan
+npx kuzushi /path/to/repo --tasks vuln-scout
+
+# Combine with other tasks
+npx kuzushi /path/to/repo --tasks semgrep,vuln-scout,threat-hunt
+
+# Use a specific model for vuln-scout
+npx kuzushi /path/to/repo --tasks vuln-scout --task-model vuln-scout=anthropic:claude-opus-4-6
+
+# Configure via .kuzushi/config.json
+# { "tasks": ["semgrep", "vuln-scout"], "taskConfig": { "vuln-scout": { "model": "anthropic:claude-opus-4-6", "maxFindings": 30 } } }
+```
+
+Kuzushi handles triage, verification, PoC generation, and reporting on top of vuln-scout's findings.
 
 ## Standalone Scan Pipeline
 
@@ -69,6 +91,10 @@ python3 scripts/report.py .claude/findings.json --format html --output security-
 
 # CI gate: fail on high-severity findings
 python3 scripts/scan_orchestrator.py . --tools semgrep --fail-on high --format sarif --output findings.sarif
+
+# Validate and run prompt/skill eval suites
+python3 whitebox-pentest/scripts/validate_evals.py
+python3 whitebox-pentest/scripts/run_prompt_evals.py
 ```
 
 ## What You Get
@@ -192,6 +218,10 @@ Dedicated detection patterns for:
 - `cvss_vector` and `cvss_score` provide CVSS 3.1 scoring.
 - Severity summaries count only unsuppressed entries where `kind == "finding"`.
 
+Prompt-first orchestration adds two persisted companion artifacts:
+- `.claude/audit-plan.md` captures module priority, attack surfaces, and verification strategy before deep-dive auditing.
+- `.claude/review-ledger.json` records adversarial review rounds for audit plans, threat models, and finding verification.
+
 CI-focused flags:
 
 ```bash
@@ -210,11 +240,12 @@ CI-focused flags:
 1. Measures codebase    -->  Too big? Compresses with language-aware strategy
 2. Detects frameworks   -->  Next.js, Flask, Spring, Rails, Django, Solidity...
 3. Threat models        -->  STRIDE analysis, DFDs, trust boundaries
-4. Ranks modules        -->  Auth first, then APIs, then everything else
-5. Scans (Semgrep)      -->  Pattern matching + taint analysis
-6. Verifies (Joern)     -->  CPG data flow proof per finding
-7. Chains findings      -->  Connects SSRF + SSTI + RCE across services
-8. Reports              -->  Markdown, JSON, or SARIF with CVSS scores
+4. Plans the audit      -->  Writes `.claude/audit-plan.md` before deep dives
+5. Adversarial review   -->  Writes `.claude/review-ledger.json` for threat/finding review loops
+6. Scans (Semgrep)      -->  Pattern matching + taint analysis
+7. Verifies (Joern)     -->  CPG data flow proof per finding
+8. Chains findings      -->  Connects SSRF + SSTI + RCE across services
+9. Reports              -->  Markdown, JSON, or SARIF with CVSS scores
 ```
 
 ### Polyglot Monorepos
@@ -327,10 +358,11 @@ Safety-first: PoCs run in `--dry-run` mode by default, require user confirmation
 ```
 whitebox-pentest/
   .claude-plugin/plugin.json   # Plugin manifest
-  agents/                       # 7 autonomous security analysts
-  commands/                     # 9 slash commands
+  agents/                       # 8 autonomous security analysts
+  commands/                     # 13 slash commands
   hooks/                        # 4 background automation hooks
   skills/                       # 27 auto-activated knowledge modules
+  evals/                        # Prompt/skill trigger and workflow eval definitions
   scripts/
     scan_orchestrator.py        # Main scan pipeline
     run_semgrep.py              # Semgrep wrapper + normalizer
@@ -340,6 +372,9 @@ whitebox-pentest/
     bundle_joern.py             # Script bundler for Joern compatibility
     markdown_report.py          # Report generator
     artifact_utils.py           # Findings schema, SARIF, CVSS, dedup
+    prompt_artifacts.py         # Audit plan, review ledger, and state validators
+    validate_evals.py           # Prompt eval definition validator
+    run_prompt_evals.py         # Prompt/skill benchmark runner
     tool_runners/               # Modular tool runner package
     joern/                      # 15 CPG verification scripts
 ```

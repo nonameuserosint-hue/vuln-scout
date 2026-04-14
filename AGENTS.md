@@ -30,6 +30,8 @@ whitebox-pentest/
 - Commands are markdown files in `commands/` with YAML frontmatter
 - Hooks are in `hooks/` for event-driven automation
 - Shared findings contract lives in `whitebox-pentest/references/findings.schema.json`
+- Prompt-first orchestration artifacts live in `.claude/audit-plan.md` and `.claude/review-ledger.json`
+- Prompt eval definitions live in `whitebox-pentest/evals/`; validate with `python3 whitebox-pentest/scripts/validate_evals.py`
 - Use `kind: finding` for reportable issues and `kind: hotspot` for sink-only or framework-pivot leads
 - `python3 whitebox-pentest/scripts/check_consistency.py` is the release gate for doc/schema drift
 

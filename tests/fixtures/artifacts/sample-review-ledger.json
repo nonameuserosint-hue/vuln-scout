@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0.0",
+  "generated_at": "2026-04-09T12:00:00Z",
+  "subjects": [
+    {
+      "subject_type": "audit-plan",
+      "subject_id": "audit-plan:main",
+      "round": 1,
+      "reviewers": [
+        {
+          "name": "coverage-reviewer",
+          "angle": "missed attack surfaces",
+          "summary": "Requested an explicit cache poisoning check."
+        },
+        {
+          "name": "priority-reviewer",
+          "angle": "bad prioritization",
+          "summary": "Approved after auth modules were moved earlier."
+        }
+      ],
+      "status": "CHANGES_REQUESTED",
+      "notes": [
+        "Round 1 requested stronger coverage for unauthenticated entry points."
+      ]
+    },
+    {
+      "subject_type": "threat-model",
+      "subject_id": "threat-model:default",
+      "round": 2,
+      "reviewers": [
+        {
+          "name": "stride-reviewer",
+          "angle": "STRIDE correctness",
+          "summary": "Threat categories aligned after trust boundary updates."
+        }
+      ],
+      "status": "APPROVED",
+      "notes": [
+        "Round 2 closed after trust boundaries were clarified."
+      ]
+    },
+    {
+      "subject_type": "finding-verification",
+      "subject_id": "finding:VSCOUT-0042",
+      "round": 3,
+      "reviewers": [
+        {
+          "name": "cold-verifier",
+          "angle": "finding review",
+          "summary": "Evidence remains incomplete without runtime confirmation."
+        }
+      ],
+      "status": "UNRESOLVED",
+      "notes": [
+        "[REVIEWER NOTE: unresolved] Keep verdict needs_review until dynamic confirmation is available."
+      ]
+    }
+  ]
+}
