@@ -4,9 +4,9 @@
 
 <h1 align="center">VulnScout</h1>
 
-<p align="center"><strong>AI-powered whitebox penetration testing for Claude Code.</strong></p>
+<p align="center"><strong>AI-assisted whitebox security review for Claude Code and Kuzushi.</strong></p>
 
-One command. Full audit. Any codebase.
+Install it, run a deterministic quick scan, triage findings, suppress accepted risk, export a report, and fail CI on blocking issues.
 
 ```
 /whitebox-pentest:full-audit /path/to/code
@@ -14,9 +14,71 @@ One command. Full audit. Any codebase.
 
 ---
 
-VulnScout is a Claude Code plugin that turns Claude into an autonomous security reviewer. It brings battle-tested pentesting methodology (HTB Academy, OffSec AWAE/OSWE) into your terminal with STRIDE threat modeling, evidence-first findings, and support for 9 languages including Solidity smart contracts.
+VulnScout is a Claude Code plugin for AppSec engineers and senior developers doing whitebox review. It brings pentesting methodology (HTB Academy, OffSec AWAE/OSWE) into your terminal with STRIDE threat modeling, evidence-first findings, and support for 9 source languages including Solidity smart contracts.
 
-**Tested end-to-end on OWASP Juice Shop v17.1.1** -- 62 findings across SQL injection, XSS, path traversal, SSTI, SSRF, hardcoded secrets, and more.
+Current release gates cover the Python scanner/reporting code, prompt consistency checks, eval definition validation, Kuzushi module import, and npm package dry-runs. Broad analyzer claims are documented as stable, beta, or experimental below.
+
+## 5-Minute Demo
+
+The bundled demo target is intentionally vulnerable and works with the offline `quick` profile.
+
+```bash
+cd demo/vulnerable-app
+python3 ../../whitebox-pentest/scripts/doctor.py --strict
+python3 ../../whitebox-pentest/scripts/scan_orchestrator.py . --profile quick --format md --output report.md
+python3 ../../whitebox-pentest/scripts/report.py .claude/findings.json --format html --output report.html
+```
+
+Expected quick-profile result: four findings from bundled local rules:
+
+- high: Python SQL injection via f-string database query
+- high: Python command execution through shell calls
+- medium: JavaScript `innerHTML` assignment
+- medium: Express redirect from request input
+
+No Semgrep registry/network access is required for this demo.
+
+## Golden Workflow
+
+```bash
+# 1. Check local readiness
+python3 whitebox-pentest/scripts/doctor.py --strict
+
+# 2. Run deterministic local scan
+python3 whitebox-pentest/scripts/scan_orchestrator.py . --profile quick --format sarif --output findings.sarif
+
+# 3. Review or suppress accepted risk
+cp whitebox-pentest/references/vuln-scout-ignore.example .vuln-scout-ignore
+python3 whitebox-pentest/scripts/scan_orchestrator.py . --profile quick --suppressions .vuln-scout-ignore
+
+# 4. Export human and machine reports
+python3 whitebox-pentest/scripts/report.py .claude/findings.json --format html --output security-report.html
+python3 whitebox-pentest/scripts/report.py .claude/findings.json --format sarif --output findings.sarif
+
+# 5. Fail CI on blocking findings
+python3 whitebox-pentest/scripts/report.py .claude/findings.json --fail-on high
+```
+
+## Scan Profiles
+
+| Profile | Stability | Purpose | Network dependency |
+|---------|-----------|---------|--------------------|
+| `quick` | Stable | Bundled local Semgrep rules for fast setup validation and CI smoke scans | No |
+| `deep` | Beta | Semgrep registry plus installed CodeQL, Joern, Slither, Trivy, Checkov, and secret scanners | Maybe |
+| `audit` | Beta | Claude-assisted review baseline with local rules and available verification tools | No by default |
+
+Use `--require-tools` when CI should fail if any requested tool is missing.
+
+## Feature Maturity
+
+| Capability | Status | Evidence |
+|------------|--------|----------|
+| Claude Code plugin commands, agents, hooks, skills | Stable | Consistency checks validate the Claude-first layout and command counts |
+| Shared findings artifact, suppressions, SARIF/Markdown/HTML reports | Stable | Unit tests and report smoke tests cover the artifact contract |
+| `quick` local scan profile | Stable | Bundled rules and demo target provide deterministic offline validation |
+| Kuzushi/NPM package interface | Stable | ESM import and package dry-run are CI gates |
+| CodeQL, Joern, Slither, Trivy, Checkov orchestration | Beta | Integrated when installed; real-world coverage depends on external tool setup |
+| Auto-fix, PoC generation, mutation testing, broad dynamic verification | Experimental | Useful workflow prompts/scripts exist, but should not be treated as unattended automation |
 
 ## Why VulnScout?
 
@@ -77,20 +139,23 @@ Kuzushi handles triage, verification, PoC generation, and reporting on top of vu
 VulnScout includes Python scripts that run independently of Claude Code:
 
 ```bash
-# Scan with Semgrep + secret scanning
-python3 scripts/scan_orchestrator.py /path/to/code --tools semgrep --secrets --format sarif
+# Check local runtime readiness
+python3 whitebox-pentest/scripts/doctor.py
+
+# Stable quick scan with bundled local rules
+python3 whitebox-pentest/scripts/scan_orchestrator.py /path/to/code --profile quick --format sarif
 
 # Create a Joern CPG (cached by content hash)
-python3 scripts/create_cpg.py /path/to/code
+python3 whitebox-pentest/scripts/create_cpg.py /path/to/code
 
 # Batch-verify findings with Joern CPG analysis
-python3 scripts/batch_verify.py --findings .claude/findings.json --cpg .joern/*.cpg
+python3 whitebox-pentest/scripts/batch_verify.py --findings .claude/findings.json --cpg .joern/*.cpg
 
 # Render HTML or Markdown from an existing findings artifact
-python3 scripts/report.py .claude/findings.json --format html --output security-report.html
+python3 whitebox-pentest/scripts/report.py .claude/findings.json --format html --output security-report.html
 
 # CI gate: fail on high-severity findings
-python3 scripts/scan_orchestrator.py . --tools semgrep --fail-on high --format sarif --output findings.sarif
+python3 whitebox-pentest/scripts/scan_orchestrator.py . --profile quick --fail-on high --format sarif --output findings.sarif
 
 # Validate and run prompt/skill eval suites
 python3 whitebox-pentest/scripts/validate_evals.py
@@ -285,26 +350,33 @@ Cross-Service Findings:
 
 ## Prerequisites
 
-**Required:**
+**Required for `quick` scans:**
+```bash
+pip install semgrep       # Local deterministic scan profile
+```
+
+**Required for Claude large-codebase scoping:**
 ```bash
 npm install -g repomix    # Codebase compression for large repos
 ```
 
-**Recommended (enhances scanning):**
-```bash
-pip install semgrep       # Pattern matching + taint analysis
-```
-
-**Optional (deepens analysis):**
+**Optional for `deep` and `audit` profiles:**
 ```bash
 # Joern CPG analysis (data flow verification)
 curl -L "https://github.com/joernio/joern/releases/latest/download/joern-install.sh" | bash
+
+# CodeQL security queries
+codeql version
 
 # Secret scanning (git history)
 brew install gitleaks     # or: pip install trufflehog
 
 # Solidity analysis
 pip install slither-analyzer
+
+# IaC/container context
+brew install trivy
+pip install checkov
 ```
 
 ## Methodology

@@ -1,0 +1,34 @@
+name: VulnScout Security Gate
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  vuln-scout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Semgrep
+        run: pip install semgrep
+
+      - name: Check VulnScout readiness
+        run: python3 whitebox-pentest/scripts/doctor.py --strict
+
+      - name: Run quick scan
+        run: python3 whitebox-pentest/scripts/scan_orchestrator.py . --profile quick --format sarif --output findings.sarif
+
+      - name: Fail on high findings
+        run: python3 whitebox-pentest/scripts/report.py .claude/findings.json --fail-on high
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: findings.sarif
